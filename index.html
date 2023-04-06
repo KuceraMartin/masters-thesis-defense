@@ -1,1 +1,545 @@
-<h1>Hello world</h1>
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="generator" content="pandoc">
+  <meta name="author" content="Martin Kučera supervised by Matt Bovel">
+  <meta name="dcterms.date" content="2023-04-06">
+  <title>Type-safe SQL Queries in Scala</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+  <link rel="stylesheet" href="https://unpkg.com/reveal.js@^4//dist/reset.css">
+  <link rel="stylesheet" href="https://unpkg.com/reveal.js@^4//dist/reveal.css">
+  <style>
+    .reveal .sourceCode {  /* see #7635 */
+      overflow: visible;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="https://unpkg.com/reveal.js@^4//dist/theme/white.css" id="theme">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/atom-one-light.min.css">
+  <link rel="stylesheet" href="custom.css" />
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+
+<section id="title-slide">
+  <h1 class="title">Type-safe SQL Queries in Scala</h1>
+  <p class="author"><a href="mailto:martin@mkucera.cz">Martin
+Kučera</a><br><small>supervised by Matt Bovel</small></p>
+  <p class="date">April 6, 2023</p>
+</section>
+
+<section id="links" class="slide level2">
+<h2>Links</h2>
+<p><img data-src="qr.svg" /></p>
+<p>These slides: <a
+href="https://go.epfl.ch/tyqu">go.epfl.ch/tyqu</a></p>
+<p>GitHub: <a
+href="https://github.com/KuceraMartin/tyqu">github.com/KuceraMartin/tyqu</a></p>
+<p>Thesis WIP: <a
+href="https://go.epfl.ch/tyqu-thesis">go.epfl.ch/tyqu-thesis</a></p>
+</section>
+<section id="discogs-database" class="slide level2">
+<h2>Discogs database</h2>
+<p><img src="er.svg" width="1200"></p>
+</section>
+<section id="motivation" class="slide level2">
+<h2>Motivation</h2>
+</section>
+<section class="slide level2">
+
+<h3 id="why-type-safe-sql-queries">Why type-safe SQL queries?</h3>
+<pre class="scala"><code>import java.sql.*
+
+val connection = DriverManager.getConnection(&quot;jdbc:postgresql://...&quot;)
+
+val st = connection.createStatement()
+
+val rs = st.executeQuery(&quot;SELECT &#39;Hello, world!&#39;&quot;)</code></pre>
+</section>
+<section class="slide level2">
+
+<pre class="scala"><code>st.executeQuery(&quot;SELECT * FROM artists WHERE name &gt;= 7&quot;)</code></pre>
+<pre><code>org.postgresql.util.PSQLException: ERROR: operator does not exist: character varying &gt;= integer
+  Hint: No operator matches the given name and argument types. You might need to add explicit type casts.
+  Position: 34
+  at org.postgresql.core.v3.QueryExecutorImpl.receiveErrorResponse(QueryExecutorImpl.java:2676)
+  at org.postgresql.core.v3.QueryExecutorImpl.processResults(QueryExecutorImpl.java:2366)
+  at org.postgresql.core.v3.QueryExecutorImpl.execute(QueryExecutorImpl.java:356)
+  at org.postgresql.jdbc.PgStatement.executeInternal(PgStatement.java:496)
+  at org.postgresql.jdbc.PgStatement.execute(PgStatement.java:413)
+  at org.postgresql.jdbc.PgStatement.executeWithFlags(PgStatement.java:333)
+  at org.postgresql.jdbc.PgStatement.executeCachedSql(PgStatement.java:319)
+  at org.postgresql.jdbc.PgStatement.executeWithFlags(PgStatement.java:295)
+  at org.postgresql.jdbc.PgStatement.executeQuery(PgStatement.java:244)
+  ... 32 elided</code></pre>
+</section>
+<section class="slide level2">
+
+<pre class="scala"><code>val rs = st.executeQuery(&quot;SELECT * FROM releases&quot;);
+
+while rs.next() do
+  val title = rs.getString(&quot;title&quot;)
+  val pos = rs.getInt(&quot;position&quot;)
+  println(s&quot;$title $pos&quot;)</code></pre>
+</section>
+<section class="slide level2">
+
+<pre><code>org.postgresql.util.PSQLException: Bad value for type int : A
+  at org.postgresql.jdbc.PgResultSet.toInt(PgResultSet.java:3205)
+  at org.postgresql.jdbc.PgResultSet.getInt(PgResultSet.java:2422)
+  at org.postgresql.jdbc.PgResultSet.getInt(PgResultSet.java:2817)
+  ... 32 elided</code></pre>
+</section>
+<section class="slide level2">
+
+<h3 id="why-another-library">Why another library?</h3>
+</section>
+<section class="slide level2">
+
+<h4 id="structural-refinements">Structural refinements</h4>
+<pre class="scala"><code>class Record(elems: (String, Any)*) extends Selectable:
+  private val fields = elems.toMap
+  def selectDynamic(name: String): Any = fields(name)
+
+type Person = Record { val name: String; val age: Int }
+
+val person = Record(
+    &quot;name&quot; -&gt; &quot;Emma&quot;,
+    &quot;age&quot; -&gt; 42,
+  ).asInstanceOf[Person]</code></pre>
+</section>
+<section class="slide level2">
+
+<p><img data-src="dotty-structural-types-issue.png" /></p>
+</section>
+<section class="slide level2">
+
+<h4 id="joins">Joins</h4>
+<p>In Slick:</p>
+<pre class="scala"><code>tracks
+  .join(releases).on(_.releaseId === _.id)
+  .filter(_._2.title === &quot;Californication&quot;)
+  .map(_._1.title)</code></pre>
+<div class="fragment">
+<p>Or equivalently:</p>
+<pre class="scala"><code>for
+  t &lt;- tracks
+  r &lt;- releases if t.releaseId === r.id
+yield
+  t.title</code></pre>
+</div>
+</section>
+<section class="slide level2">
+
+<p>Vision:</p>
+<pre class="scala"><code>tracks
+  .filter(_.release.title === &quot;Californication&quot;)
+  .map(_.title)</code></pre>
+</section>
+<section class="slide level2">
+
+<h4 id="even-better-type-safety">Even better type safety</h4>
+<p>e.g. group by in Quill:</p>
+<pre class="scala"><code>releases.groupByMap(_.genre)(r =&gt; (r.genre, r.title))</code></pre>
+<h4 id="readable-sql">Readable SQL</h4>
+</section>
+<section id="tyqu" class="slide level2">
+<h2>Tyqu</h2>
+</section>
+<section class="slide level2">
+
+<h3 id="how-to-describe-a-schema">How to describe a schema</h3>
+<pre class="scala"><code>object Releases extends Table:
+  val id = Column[Int](primary = true)
+  val title = Column[String]()
+  val country = Column[String]()
+  val genre = Column[String]()
+
+  lazy val artists = ManyToMany(target = Artists,
+    joiningTable = ReleasedBy,
+    sourceColumn = ReleasedBy.releaseId,
+    targetColumn = ReleasedBy.artistId)
+  lazy val tracks =
+    OneToMany(target = Tracks, through = Tracks.release)</code></pre>
+</section>
+<section class="slide level2">
+
+<h3 id="how-to-write-queries">How to write queries</h3>
+<pre class="scala"><code>val q = from(Tracks).map{ t =&gt; (
+    t.title,
+    t.position,
+  ) }
+
+
+for row &lt;- q.execute() do
+  println(s&quot;${row.title} ${row.position}&quot;)</code></pre>
+</section>
+<section class="slide level2">
+
+<pre class="scala"><code>val q = from(Tracks).map{ t =&gt; 
+    val fullTitle = (
+          t.position + &quot;. &quot; + t.title + &quot; (&quot; + t.release.title + &quot;)&quot;
+      ).as(&quot;fullTitle&quot;)
+    (t.title, t.position, fullTitle)
+  }
+
+
+for row &lt;- q.execute() do
+  println(row.fullTitle)</code></pre>
+</section>
+<section class="slide level2">
+
+<pre class="scala"><code>val q = from(Releases)
+  .filter(_.artists.exists(_.name === &quot;Radiohead&quot;))
+  .filter(_.tracks.count &lt; 5)
+  .map(_.title)
+  .sorted
+
+q.execute().foreach(println)</code></pre>
+</section>
+<section class="slide level2">
+
+<pre class="scala"><code>val q = from(Artists)
+  .filter(_.releases.flatMap(_.tracks).map(_.duration).sum &gt;= 10000)</code></pre>
+</section>
+<section class="slide level2">
+
+<pre class="scala"><code>from(Releases)
+  .flatMap{ r =&gt; r.tracks.map{ t =&gt; (r.genre, t.duration) } }
+  .groupMap(_.genre){ r =&gt;
+      (r.genre, r.duration.avg.as(&quot;avgDuration&quot;))
+    }
+</code></pre>
+</section>
+<section id="under-the-hood" class="slide level2">
+<h2>Under the hood</h2>
+<pre class="scala"><code>def from[T &lt;: Table](table: T) =
+  val rel = FromRelation(table)
+  val scope = TableScope(rel)
+  QueryBuilder(scope, rel)</code></pre>
+</section>
+<section class="slide level2">
+
+<pre class="scala"><code>class QueryBuilder[S &lt;: Scope](
+  scope: S,
+  from: FromRelation[?] | SubqueryRelation,
+  where: Expression[Boolean] = NoFilterExpression,
+  groupBy: List[Expression[?]] = List.empty,
+  orderBy: List[OrderBy] = List.empty,
+  limit: Option[Int] = None,
+  offset: Int = 0,
+):
+  def map[S2 &lt;: Scope](fn: S =&gt; S2): QueryBuilder[S2]
+  def flatMap[S2 &lt;: Scope](fn: S =&gt; QueryBuilder[S2]): QueryBuilder[S2]
+  def groupMap[G &lt;: Scope, M &lt;: Scope](g: S =&gt; G)(m: S =&gt; M): QueryBuilder[M]
+  def filter(predicate: S =&gt; Expression[Boolean]): QueryBuilder[S]
+  def sortBy(fn: S =&gt; OrderBy | Tuple): QueryBuilder[S]
+  def sorted(desc: Boolean): QueryBuilder[S]
+  def sorted: QueryBuilder[S]
+  def limit(v: Int): QueryBuilder[S]
+  def offset(v: Int): QueryBuilder[S]
+  def exists(predicate: S =&gt; Expression[Boolean]): Expression[Boolean]
+  def count: QueryBuilder[Expression[Int]]
+  def execute()(using executor: QueryExecutor): Iterator[Result[S]]</code></pre>
+</section>
+<section class="slide level2">
+
+<p><img data-src="expression-class-diagram.svg" /></p>
+</section>
+<section class="slide level2">
+
+<pre class="scala"><code>inline transparent def map[Sc &lt;: Scope, Tu &lt;: Tuple, S2 &lt;: (Sc | Tu)](inline fn: S =&gt; S2): QueryBuilder[?] =
+  val (originalScope, newQb) = prepareMap
+  QueryBuilderFactory.fromMap[S, Sc, Tu, S2](originalScope, newQb, fn)</code></pre>
+<pre class="scala"><code>// QueryBuilderFactory.fromMap (tuple case)
+val selection = &#39;{$fn($originalScope)}.asExprOf[Tu]
+ScopeFactory.refine[Tu, TupleScope] match
+case &#39;[ScopeSubtype[t]] =&gt;
+    &#39;{ $newQb.copy(scope = TupleScope($selection)).asInstanceOf[QueryBuilder[t]] }</code></pre>
+</section>
+<section id="future-work" class="slide level2">
+<h2>Future work</h2>
+<ul>
+<li>single-row queries</li>
+<li>async</li>
+<li>make ready for customizations</li>
+<li>DML (insert, update, delete)</li>
+<li>transactions</li>
+<li>generating:
+<ul>
+<li>DDL from schema</li>
+<li>schema from DDL</li>
+<li>migrations</li>
+</ul></li>
+</ul>
+</section>
+<section id="conclusion" class="slide level2">
+<h2>Conclusion</h2>
+<ul>
+<li>Tyqu
+<ul>
+<li>a type-safe SQL query builder</li>
+<li>with convenient projections (i.e. <code>.map()</code>)</li>
+<li>and convenient joins</li>
+</ul></li>
+</ul>
+<div class="fragment">
+<ul>
+<li>Achievements:
+<ul>
+<li>3 reported issues in Dotty</li>
+<li>2 reported issues in scala-cli</li>
+<li>2 merged PRs in scala-cli</li>
+<li>Accepted talk for Scala Days Madrid</li>
+</ul></li>
+</ul>
+</div>
+</section>
+<section id="backup-slides" class="slide level2">
+<h2>Backup slides</h2>
+</section>
+<section class="slide level2">
+
+<h3 id="ast-example">AST example</h3>
+<pre class="scala"><code>from(Releases)
+  .filter(r =&gt; r.genre === &quot;Classical&quot; &amp;&amp; r.title.contains(&quot;Sonata&quot;))
+  .sortBy(_.title.asc)
+  .limit(10)</code></pre>
+<pre class="scala"><code>QueryBuilder(
+  scope = TableScope(releasesRelation),
+  from = releasesRelation,
+  where = And(
+      Function(&quot;=&quot;, List(
+        ColumnValue(&quot;genre&quot;, releasesRelation),
+        LiteralExpression(&quot;Classical&quot;),
+      )),
+      Contains(&quot;Sonata&quot;, ColumnValue(&quot;title&quot;, releasesRelation)),
+    ),
+  orderBy = List(Asc(ColumnValue(&quot;title&quot;, releasesRelation))),
+  limit = Some(10),
+)</code></pre>
+</section>
+<section class="slide level2">
+
+<p><img src="scope-class-diagram.svg" height="700"></p>
+</section>
+<section class="slide level2">
+
+<h3 id="relationships">Relationships</h3>
+<pre class="scala"><code>from(Releases)
+  .map{ r =&gt; (
+    r.title,
+    from(Tracks)
+      .filter(_.releaseId === r.id)
+      .count
+      .as(&quot;cnt&quot;),
+    ) }
+  .limit(10)</code></pre>
+</section>
+<section class="slide level2">
+
+<p><img src="relation-class-diagram.svg" height="700"></p>
+</section>
+<section class="slide level2">
+
+<h3 id="group-by">Group by</h3>
+<pre class="scala"><code>abstract class Expression[T, CanSelect &lt;: Boolean]
+
+abstract class ProductExpression[T, Arguments &lt;: Tuple | Expression[?, ?]] extends Expression[T, ArgsCanSelect[Arguments]]</code></pre>
+<pre class="scala"><code>inline transparent def groupMap
+    [G &lt;: (Tuple | Scope), Sc &lt;: Scope, Tu &lt;: Tuple, M &lt;: (Sc | Tu)]
+    (g: T =&gt; G)
+    (using mapRef: GroupMapScope[G, T])
+    (m: mapRef.Refined =&gt; M)
+    (using IsValidMapResult[M] =:= true): QueryBuilder[?]</code></pre>
+</section>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/reveal.js@^4//dist/reveal.js"></script>
+
+  <!-- reveal.js plugins -->
+  <script src="https://unpkg.com/reveal.js@^4//plugin/notes/notes.js"></script>
+  <script src="https://unpkg.com/reveal.js@^4//plugin/search/search.js"></script>
+  <script src="https://unpkg.com/reveal.js@^4//plugin/zoom/zoom.js"></script>
+
+  <script>
+
+      // Full list of configuration options available at:
+      // https://revealjs.com/config/
+      Reveal.initialize({
+        // Display controls in the bottom right corner
+        controls: true,
+
+        // Help the user learn the controls by providing hints, for example by
+        // bouncing the down arrow when they first encounter a vertical slide
+        controlsTutorial: true,
+
+        // Determines where controls appear, "edges" or "bottom-right"
+        controlsLayout: 'bottom-right',
+
+        // Visibility rule for backwards navigation arrows; "faded", "hidden"
+        // or "visible"
+        controlsBackArrows: 'faded',
+
+        // Display a presentation progress bar
+        progress: true,
+
+        // Display the page number of the current slide
+        slideNumber: false,
+
+        // 'all', 'print', or 'speaker'
+        showSlideNumber: 'all',
+
+        // Add the current slide number to the URL hash so that reloading the
+        // page/copying the URL will return you to the same slide
+        hash: true,
+
+        // Start with 1 for the hash rather than 0
+        hashOneBasedIndex: false,
+
+        // Flags if we should monitor the hash and change slides accordingly
+        respondToHashChanges: true,
+
+        // Push each slide change to the browser history
+        history: true,
+
+        // Enable keyboard shortcuts for navigation
+        keyboard: true,
+
+        // Enable the slide overview mode
+        overview: true,
+
+        // Disables the default reveal.js slide layout (scaling and centering)
+        // so that you can use custom CSS layout
+        disableLayout: false,
+
+        // Vertical centering of slides
+        center: true,
+
+        // Enables touch navigation on devices with touch input
+        touch: true,
+
+        // Loop the presentation
+        loop: false,
+
+        // Change the presentation direction to be RTL
+        rtl: false,
+
+        // see https://revealjs.com/vertical-slides/#navigation-mode
+        navigationMode: 'default',
+
+        // Randomizes the order of slides each time the presentation loads
+        shuffle: false,
+
+        // Turns fragments on and off globally
+        fragments: true,
+
+        // Flags whether to include the current fragment in the URL,
+        // so that reloading brings you to the same fragment position
+        fragmentInURL: true,
+
+        // Flags if the presentation is running in an embedded mode,
+        // i.e. contained within a limited portion of the screen
+        embedded: false,
+
+        // Flags if we should show a help overlay when the questionmark
+        // key is pressed
+        help: true,
+
+        // Flags if it should be possible to pause the presentation (blackout)
+        pause: true,
+
+        // Flags if speaker notes should be visible to all viewers
+        showNotes: false,
+
+        // Global override for autoplaying embedded media (null/true/false)
+        autoPlayMedia: null,
+
+        // Global override for preloading lazy-loaded iframes (null/true/false)
+        preloadIframes: null,
+
+        // Number of milliseconds between automatically proceeding to the
+        // next slide, disabled when set to 0, this value can be overwritten
+        // by using a data-autoslide attribute on your slides
+        autoSlide: 0,
+
+        // Stop auto-sliding after user input
+        autoSlideStoppable: true,
+
+        // Use this method for navigation when auto-sliding
+        autoSlideMethod: null,
+
+        // Specify the average time in seconds that you think you will spend
+        // presenting each slide. This is used to show a pacing timer in the
+        // speaker view
+        defaultTiming: null,
+
+        // Enable slide navigation via mouse wheel
+        mouseWheel: false,
+
+        // The display mode that will be used to show slides
+        display: 'block',
+
+        // Hide cursor if inactive
+        hideInactiveCursor: true,
+
+        // Time before the cursor is hidden (in ms)
+        hideCursorTime: 5000,
+
+        // Opens links in an iframe preview overlay
+        previewLinks: false,
+
+        // Transition style (none/fade/slide/convex/concave/zoom)
+        transition: 'none',
+
+        // Transition speed (default/fast/slow)
+        transitionSpeed: 'default',
+
+        // Transition style for full page slide backgrounds
+        // (none/fade/slide/convex/concave/zoom)
+        backgroundTransition: 'fade',
+
+        // Number of slides away from the current that are visible
+        viewDistance: 3,
+
+        // Number of slides away from the current that are visible on mobile
+        // devices. It is advisable to set this to a lower number than
+        // viewDistance in order to save resources.
+        mobileViewDistance: 2,
+
+        // The "normal" size of the presentation, aspect ratio will be preserved
+        // when the presentation is scaled to fit different resolutions. Can be
+        // specified using percentage units.
+        width: 1200,
+
+        height: 775,
+
+        // Factor of the display size that should remain empty around the content
+        margin: 0.1,
+
+        // reveal.js plugins
+        plugins: [
+          RevealNotes,
+          RevealSearch,
+          RevealZoom
+        ]
+      });
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/languages/scala.min.js"></script><script>hljs.highlightAll();</script>
+    </body>
+</html>
