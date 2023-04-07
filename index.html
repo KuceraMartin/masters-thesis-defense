@@ -94,7 +94,7 @@ val rs = st.executeQuery(&quot;SELECT &#39;Hello, world!&#39;&quot;)</code></pre
 while rs.next() do
   val title = rs.getString(&quot;title&quot;)
   val pos = rs.getInt(&quot;position&quot;)
-  println(s&quot;$title $pos&quot;)</code></pre>
+  println(s&quot;$pos. $title &quot;)</code></pre>
 </section>
 <section class="slide level2">
 
@@ -218,11 +218,9 @@ q.execute().foreach(println)</code></pre>
 </section>
 <section class="slide level2">
 
-<pre class="scala"><code>from(Releases)
-  .flatMap{ r =&gt; r.tracks.map{ t =&gt; (r.genre, t.duration) } }
-  .groupMap(_.genre){ r =&gt;
-      (r.genre, r.duration.avg.as(&quot;avgDuration&quot;))
-    }
+<pre class="scala"><code>from(Tracks)
+  .map{ t =&gt; (t.release.genre, t.duration) }
+  .groupMap(_.genre){ r =&gt; (r.genre, r.duration.avg.as(&quot;avgDuration&quot;)) }
 </code></pre>
 </section>
 <section id="under-the-hood" class="slide level2">
@@ -258,18 +256,16 @@ q.execute().foreach(println)</code></pre>
 </section>
 <section class="slide level2">
 
-<p><img data-src="expression-class-diagram.svg" /></p>
-</section>
-<section class="slide level2">
-
 <pre class="scala"><code>inline transparent def map[Sc &lt;: Scope, Tu &lt;: Tuple, S2 &lt;: (Sc | Tu)](inline fn: S =&gt; S2): QueryBuilder[?] =
   val (originalScope, newQb) = prepareMap
   QueryBuilderFactory.fromMap[S, Sc, Tu, S2](originalScope, newQb, fn)</code></pre>
+<div class="fragment">
 <pre class="scala"><code>// QueryBuilderFactory.fromMap (tuple case)
 val selection = &#39;{$fn($originalScope)}.asExprOf[Tu]
 ScopeFactory.refine[Tu, TupleScope] match
 case &#39;[ScopeSubtype[t]] =&gt;
     &#39;{ $newQb.copy(scope = TupleScope($selection)).asInstanceOf[QueryBuilder[t]] }</code></pre>
+</div>
 </section>
 <section id="future-work" class="slide level2">
 <h2>Future work</h2>
@@ -289,6 +285,10 @@ case &#39;[ScopeSubtype[t]] =&gt;
 </section>
 <section id="conclusion" class="slide level2">
 <h2>Conclusion</h2>
+<div style="float: right">
+<p><img src="qr.svg"> <!-- style="float: right" --> <br> <a
+href="https://go.epfl.ch/tyqu">go.epfl.ch/tyqu</a></p>
+</div>
 <ul>
 <li>Tyqu
 <ul>
@@ -335,6 +335,10 @@ case &#39;[ScopeSubtype[t]] =&gt;
 </section>
 <section class="slide level2">
 
+<p><img data-src="expression-class-diagram.svg" /></p>
+</section>
+<section class="slide level2">
+
 <p><img src="scope-class-diagram.svg" height="700"></p>
 </section>
 <section class="slide level2">
@@ -349,6 +353,28 @@ case &#39;[ScopeSubtype[t]] =&gt;
       .as(&quot;cnt&quot;),
     ) }
   .limit(10)</code></pre>
+</section>
+<section class="slide level2">
+
+<pre class="scala"><code>class TableScope[T &lt;: Table, Nullable &lt;: Boolean](
+  private[tyqu] val relation: TableRelation[T],
+) extends MultiScope with Selectable:
+
+  def selectDynamic(name: String): Any =
+    relation.table.getClass.getMethod(name).invoke(relation.table) match
+
+      case c: Column[?] =&gt;
+        relation.colToExpr(c)
+
+      case OneToMany(sourceTable, ManyToOne(_, through)) =&gt;
+        from(sourceTable).copy(where = ...)
+
+      case ManyToOne(target, through) =&gt;
+        val rel = JoinRelation(target, JoinType.Left, ...)
+        TableScope(rel)
+
+      case ManyToMany(targetTable, joiningTable, sourceColumn, targetColumn) =&gt;
+        ...</code></pre>
 </section>
 <section class="slide level2">
 
